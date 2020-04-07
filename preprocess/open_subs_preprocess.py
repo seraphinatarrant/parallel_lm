@@ -143,7 +143,7 @@ if __name__ == "__main__":
         if not args.file_ids:
             overlaps = find_overlapping_files(os.path.join(args.source_dir, lang_pair), target_dir=target_dir)
         else:    
-            file_path = os.path.join(args.file_ids, '{}_file_ids'.format(lang_pair)
+            filepath = os.path.join(args.file_ids, '{}_file_ids'.format(lang_pair))
             with open(filepath, 'rb') as fin:
                 overlaps = pickle.load(fin)
         copy_files(overlaps, args.source_dir, target_dir, lang)

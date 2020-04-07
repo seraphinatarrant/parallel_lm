@@ -1,3 +1,5 @@
+langid
 numpy
 scikit-learn
+tqdm
 pyYAML
