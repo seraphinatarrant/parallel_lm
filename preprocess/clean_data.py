@@ -24,9 +24,9 @@ def strict_filter_true_language(files, langs, output_dir):
     keep_lines, cut_lines = [], []
     print("Langs: {}".format(langs), file=sys.stderr)
     with open(files[0], "r") as fin1, open(files[1], "r") as fin2:
-        for i, line1, line2 in enumerate(zip(fin1, fin2)):
+        for line1, line2 in zip(fin1, fin2):
             clean_line1 = re.sub(r' +', ' ', line1.strip().translate(pct_stripper))
-            clean_line2 = re.sub(r' +', ' ', line1.strip().translate(pct_stripper))
+            clean_line2 = re.sub(r' +', ' ', line2.strip().translate(pct_stripper))
             predict_lang1, confidence1 = langid.classify(clean_line1)
             predict_lang2, confidence2 = langid.classify(clean_line2)
             # print(predict_lang, confidence)
@@ -60,8 +60,8 @@ def strict_filter_true_language(files, langs, output_dir):
         clean_fin2.write("".join([l[1] for l in keep_lines]))
 
     with open(out_files[0] + "_cut", "w") as cut_fin1, open(out_files[1] + "_cut", "w") as cut_fin2:
-        clean_fin1.write("".join([l[0] for l in cut_lines]))
-        clean_fin2.write("".join([l[1] for l in cut_lines]))
+        cut_fin1.write("".join([l[0] for l in cut_lines]))
+        cut_fin2.write("".join([l[1] for l in cut_lines]))
 
 def filter_true_language(filepath, ok_langs: set, output_dir):
 
@@ -134,6 +134,7 @@ if __name__ == "__main__":
         files = args.files
 
     if args.strict_filter:
+        assert len(files) > 1, "need more than one file to strict filter"
         langs = [extract_lang(f, args.filetype) for f in files]
         ok_langs = [expand_lang(this_lang, lang2ok_lang) for this_lang in langs]
         strict_filter_true_language(files, ok_langs, args.output_dir)
