@@ -31,6 +31,7 @@ def setup_argparse():
     p.add_argument('-f', '--file_ids', help='source dir for pre-extracted file ids')
     p.add_argument('--threshold', type=float, default=100,
                    help="threshold of acceptable inaccuracy in identified language")
+    p.add_argument('--langs', nargs="+", help="list of languages to work on, if not given uses all")
     return p.parse_args()
 
 
@@ -159,7 +160,10 @@ def copy_files(overlaps, source_dir, target_dir, lang, threshold=100):
 if __name__ == "__main__":
     args = setup_argparse()
 
-    all_languages = ["zh_cn", "zh_tw", "eu", "ar", "fi", "id", "ta", "ru", "de", "el", "es"] # everything will be alphabetical
+    if args.langs:
+        all_languages = args.langs
+    else:
+        all_languages = ["zh_cn", "zh_tw", "eu", "ar", "fi", "id", "ta", "ru", "de", "el", "es"] # everything will be alphabetical
     print("Working on {} languages".format(len(all_languages)))
     for lang in all_languages:
         lang_pair = "{}-{}".format(*sorted([lang,"en"]))
