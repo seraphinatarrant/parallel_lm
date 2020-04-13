@@ -9,21 +9,28 @@ import gzip
 
 import os
 import pickle
+import string
 import time
 
+import re
 from tqdm import tqdm
 import zipfile
+import langid
 import xml.etree.ElementTree as ET
 
 
 from collections import defaultdict
 
 
+pct_stripper = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
+
 def setup_argparse():
     p = argparse.ArgumentParser()
     p.add_argument('-s', dest='source_dir', help='source dir for files')
     p.add_argument('-t', dest='target_dir', help='target dir to write extracted text')
     p.add_argument('-f', '--file_ids', help='source dir for pre-extracted file ids')
+    p.add_argument('--threshold', type=float, default=100,
+                   help="threshold of acceptable inaccuracy in identified language")
     return p.parse_args()
 
 
@@ -81,7 +88,7 @@ def find_overlapping_files(p, all_files=False, target_dir=''):
 
 
 def get_sents(this_zip, filename):
-    all_sents = []
+    all_sents, lang_ids = [], [] # lang_ids for data cleanup, coindexed with sentences
     with this_zip.open(filename, "r") as fin:
         try:
             tree = ET.parse(fin)
@@ -91,43 +98,62 @@ def get_sents(this_zip, filename):
         root = tree.getroot()
         sents = root.findall("s")
         for s in sents:
-            all_sents.append(" ".join([w.text for w in s.findall("w")]))
+            this_sent = " ".join([w.text for w in s.findall("w")])
+            clean_line = re.sub(r' +', ' ', this_sent.strip().translate(pct_stripper))
+            predict_lang, confidence = langid.classify(clean_line)
+            all_sents.append(this_sent)
+            lang_ids.append(predict_lang)
 
-    return all_sents
+    return all_sents, lang_ids
 
 
+def check_percent_incorrect_lang(lang_list, correct_lang):
+    per_incorrect = (1 - (lang_list.count(correct_lang) / len(lang_list))) * 100
+    return per_incorrect
 
-def copy_files(overlaps, source_dir, target_dir, lang):
+
+def copy_files(overlaps, source_dir, target_dir, lang, threshold=100):
     # keys in overlaps will be english, subdicts will be key other lang, values other file
     print("processing data for en and {}".format(lang))
     start_time = time.time()
-    skipped = []
     prefix = "OpenSubtitles/xml/"
-    all_en_lines, all_other_lines = [], [] # TODO might have to do something different if can't all fit in memory...
     with zipfile.ZipFile(os.path.join(source_dir, "en.zip")) as z_en, \
          zipfile.ZipFile(os.path.join(source_dir, "{}.zip".format(lang))) as z_other: # currently only works for bitext, easy to extend
         all_en_files, all_other_files = set(z_en.namelist()), set(z_other.namelist())
-        for en_file in overlaps.keys():
+        skipped,incorrect_total = 0, 0
+        for i, en_file in enumerate(overlaps.keys()):
             # make sure all found before copying otherwise data isn't parallel
             other_file = overlaps[en_file][lang]
             en_file = prefix + en_file
             other_file = prefix + other_file
             #breakpoint()
             if en_file not in all_en_files or other_file not in all_other_files:
-                skipped.append((en_file, other_file))
+                skipped += 1
                 continue
-            en_sents, other_sents = get_sents(z_en, en_file), get_sents(z_other, other_file)
+            en_sents, en_langs = get_sents(z_en, en_file)
+            other_sents, other_langs = get_sents(z_other, other_file)
+            incorrect_en = check_percent_incorrect_lang(en_langs, "en")
+            incorrect_other = check_percent_incorrect_lang(other_langs, lang)
+            print("Incorrect % for en: {}, incorrect % for {}: {}".format(
+                incorrect_en, lang, incorrect_other
+            ))
             #breakpoint()
             if en_sents and other_sents:
-                all_en_lines.extend(en_sents)
-                all_other_lines.extend(other_sents)
-    with open(os.path.join(target_dir, "en.txt"), "w") as en_out, \
-            open(os.path.join(target_dir, "{}.txt".format(lang)), "w") as other_out:
-        en_out.write("\n".join(all_en_lines))
-        other_out.write("\n".join(all_other_lines))
-        print("wrote {} lines of en and {} lines of {}".format(
-            len(all_en_lines), len(all_other_lines), lang))
-        print("Seconds elapsed for this lang set: {}".format(time.time()-start_time))
+                if incorrect_en < threshold and incorrect_other < threshold:
+                    with open(os.path.join(target_dir, "en_{}.txt".format(i)), "w") as en_out, \
+                            open(os.path.join(target_dir, "{}_{}.txt".format(lang, i)), "w") as other_out:
+                        en_out.write("\n".join(en_sents))
+                        other_out.write("\n".join(other_sents))
+                        print("wrote {} lines of en and {} lines of {}".format(
+                            len(en_sents), len(other_sents), lang))
+                else:
+                    incorrect_total += 1
+            else:
+                skipped += 1
+        print("Seconds elapsed for this lang set ({} total files): {}".format(
+            time.time()-start_time, len(overlaps)))
+        print("Skipped due to parse issues or missing files: {}".format(skipped))
+        print("Skipped due to language identification below threshold: {}".format(incorrect_total))
     
 
 if __name__ == "__main__":
@@ -146,6 +172,7 @@ if __name__ == "__main__":
             filepath = os.path.join(args.file_ids, '{}_file_ids'.format(lang_pair))
             with open(filepath, 'rb') as fin:
                 overlaps = pickle.load(fin)
-        copy_files(overlaps, args.source_dir, target_dir, lang)
+
+        copy_files(overlaps, args.source_dir, target_dir, lang, args.threshold)
 
 
