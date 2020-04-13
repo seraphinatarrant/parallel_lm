@@ -88,7 +88,7 @@ def find_overlapping_files(p, all_files=False, target_dir=''):
     return dic
 
 
-def get_sents(this_zip, filename):
+def get_sents(this_zip, filename, lang):
     all_sents, lang_ids = [], [] # lang_ids for data cleanup, coindexed with sentences
     with this_zip.open(filename, "r") as fin:
         try:
@@ -102,6 +102,9 @@ def get_sents(this_zip, filename):
             this_sent = " ".join([w.text for w in s.findall("w")])
             clean_line = re.sub(r' +', ' ', this_sent.strip().translate(pct_stripper))
             predict_lang, confidence = langid.classify(clean_line)
+            if predict_lang != lang:
+                print("Predicted Lang {} (Conf: {:4f}) for line: {}".format(predict_lang, confidence,
+                                                                      this_sent))
             all_sents.append(this_sent)
             lang_ids.append(predict_lang)
 
@@ -109,7 +112,12 @@ def get_sents(this_zip, filename):
 
 
 def check_percent_incorrect_lang(lang_list, correct_lang):
-    per_incorrect = (1 - (lang_list.count(correct_lang) / len(lang_list))) * 100
+    # add special casing for indonesian being usually misidentified as malay
+    if correct_lang == "id":
+        correct = lang_list.count("id") + lang_list.count("ms")
+    else:
+        correct = lang_list.count(correct_lang)
+    per_incorrect = (1 - (correct / len(lang_list))) * 100
     return per_incorrect
 
 
